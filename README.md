@@ -19,6 +19,12 @@ Secure_Chat is a secure chat application designed to enable users to communicate
 - Python 3.x
 - Required Python libraries:
   - `pycryptodome` for cryptographic functions
+  - `socket` for network communication
+  - `threading` for handling multiple clients
+  - `hashlib` for hashing
+  - `sqlite3` lightweight database to store data persistently
+  - `datetime` for handling time-related operations (track when users go online or offline)
+
 
 ### Installation
 

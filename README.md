@@ -44,23 +44,19 @@ Secure_Chat is a secure chat application designed to enable users to communicate
 ### Completed 
 
 1. **Set Up the Project Structure**
-Create your folders and organize the project files (e.g., client.py, server.py, users.db for the database).
+Create the folders and organize the project files (e.g., client.py, server.py, users.db for the database).
 
-
-### TO-DO
-
-2. **Implement Basic Client-Server Communication**
-Goal: Get the client and server to connect and exchange basic messages.
-Why: This forms the foundation of your system. Without a working connection, nothing else can function.
-Implement a simple chat system using socket and threading libraries.
-
-3. **Set Up User Registration and Authentication (User Database)**
+2. **Set Up User Registration and Authentication (User Database)**
 Goal: Set up a user authentication system.
-Why: You’ll need a way to identify users before moving on to secure communication.
-Steps:
 Create the SQLite database for users.
 Implement registration and login functions (hashing passwords with hashlib for security).
 Test that users can register and log in.
+
+### TO-DO
+
+3. **Implement Basic Client-Server Communication**
+Goal: Get the client and server to connect and exchange basic messages.
+Implement a simple chat system using socket and threading libraries.
 
 4. **Track User Status (Online/Offline)**
 Goal: Implement online/offline status tracking.

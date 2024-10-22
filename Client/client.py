@@ -1,10 +1,9 @@
-# client.py
 import socket
 import threading
 
 # Client setup
-HOST = '127.0.0.1'  # Server IP
-PORT = 65432        # Server port
+HOST = '127.0.0.1'
+PORT = 65432
 
 def receive_messages(client_socket):
     while True:

@@ -1,3 +1,4 @@
+# client.py
 import socket
 import threading
 
@@ -21,7 +22,15 @@ def receive_messages(client_socket):
 def send_messages(client_socket):
     while True:
         message = input()
-        client_socket.send(message.encode('utf-8'))
+        
+        # Command to show online users
+        if message.lower() == 'show_online':
+            client_socket.send(message.encode('utf-8'))
+        elif message.lower().startswith('invite'):
+            client_socket.send(message.encode('utf-8'))
+        else:
+            client_socket.send(message.encode('utf-8'))
+
 
 def start_client():
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

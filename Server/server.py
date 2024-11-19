@@ -19,6 +19,7 @@ PORT = 65432        # Port to listen on
 
 clients = {} # List to keep track of connected clients
 chat_groups = {}  # Dictionary to track chat groups
+chatroom = set()  # Set to track users in the central chatroom
 symmetric_keys = {}
 user_status = {}  # Track user status ('online' / 'offline')
 client_lock = threading.Lock()  # Thread lock for protecting shared resources
@@ -156,12 +157,10 @@ def start_chat(username):
 def send_group_message(sender, message):
     """ Send the message to all participants in the chat group, encrypting the message using the symmetric key """
     if sender in chat_groups:
-        for participant in chat_groups[sender]:
+        # Use a copy of the chatroom list to avoid modification during iteration
+        for participant in list(chat_groups[sender]):  # Use list() to avoid modifying the set during iteration
             if participant in clients:
-                # Encrypt the message using the symmetric key
                 encrypted_message = encrypt_message(message, participant)
-
-                # Send the encrypted message to the participant
                 clients[participant].send(f"{sender}: {encrypted_message}".encode('utf-8'))
 
         # Send message to the sender too (encrypted)
@@ -175,8 +174,8 @@ def handle_client(conn, addr):
     print(f"[NEW CONNECTION] {addr} connected.")
     
     username = None
-    while True:
-        try:
+    try:
+        while True:
             conn.send("Enter 'register', 'login', or 'exit' to disconnect: ".encode('utf-8'))
             choice = conn.recv(1024).decode('utf-8')
 
@@ -201,13 +200,13 @@ def handle_client(conn, addr):
                 password = conn.recv(1024).decode('utf-8')
 
                 if authenticate_user(username, password):
-                    conn.send(f"Welcome '{username}'! You can enter 'show_online' to see online users, 'invite' to invite a user, or 'logout' to exit.\n".encode('utf-8'))
+                    conn.send(f"Welcome '{username}'! You can enter 'show_online' to see online users, 'join_chatroom' to enter the central chatroom, or 'logout' to exit.\n".encode('utf-8'))
                     set_user_online(username)  # Set user status to 'online'
                     clients[username] = conn  # Store the client connection
 
-                    # Chatroom or user interaction logic here
+                    # Main interaction loop for logged-in user
                     while True:
-                        conn.send("Enter 'show_online', 'invite', or 'logout': ".encode('utf-8'))
+                        conn.send("Enter 'show_online', 'invite', 'join_chatroom', or 'logout': ".encode('utf-8'))
                         user_command = conn.recv(1024).decode('utf-8')
 
                         if user_command.lower() == 'logout':
@@ -223,14 +222,24 @@ def handle_client(conn, addr):
                                 conn.send("No users are currently online.\n".encode('utf-8'))
 
                         elif user_command.lower() == 'invite':
+                            # Handle inviting users to chat
                             conn.send("Enter usernames to invite (comma-separated): ".encode('utf-8'))
-                            invitees = conn.recv(1024).decode('utf-8').split(',')
-                            invitees = [invitee.strip() for invitee in invitees]
+                            invited_usernames = conn.recv(1024).decode('utf-8').split(',')
 
-                            invite_to_chat(conn, username, invitees)
+                            for invited in invited_usernames:
+                                invited = invited.strip()
+                                if invited in clients:  # Check if the invited user is online
+                                    clients[invited].send(f"[INVITE] {username} has invited you to chat.".encode('utf-8'))
+                            conn.send("Invites sent to online users.\n".encode('utf-8'))
+
+                        elif user_command.lower() == 'join_chatroom':
+                            # Add the user to the central chatroom
+                            chatroom.add(username)
+                            conn.send(f"Welcome to the chatroom, {username}! Everyone is now able to chat together.\n".encode('utf-8'))
+                            start_chatroom()
 
                         else:
-                            conn.send("Invalid command. Please try again.\n".encode('utf-8'))
+                            conn.send("Invalid option. Please try again.\n".encode('utf-8'))
                 else:
                     conn.send("Login failed. Try again.\n".encode('utf-8'))
             elif choice.lower() == 'exit':
@@ -238,16 +247,45 @@ def handle_client(conn, addr):
                 break  # Exit the main loop to disconnect
             else:
                 conn.send("Invalid option. Please try again.\n".encode('utf-8'))
-        except Exception as e:
-            print(f"[ERROR] {e}")
-            break
+    except Exception as e:
+        print(f"[ERROR] {e}")
+    finally:
+        # Ensure disconnection cleanup
+        if username in clients:
+            del clients[username]
+        set_user_offline(username)  # Ensure user is marked offline when disconnecting
+        conn.close()
+        print(f"[DISCONNECTED] {addr} disconnected.")
 
-    # Remove user from clients and close connection
-    if username in clients:
-        del clients[username]
-    set_user_offline(username)  # Ensure user is marked offline when disconnecting
-    conn.close()
-    print(f"[DISCONNECTED] {addr} disconnected.")
+def start_chatroom():
+    """ Main chat loop for the central chatroom """
+    while True:
+        leaving_users = []  # List to store users who leave during the iteration
+        for user in list(chatroom):  # Use a copy of the chatroom set for iteration
+            try:
+                message = clients[user].recv(1024).decode('utf-8')
+
+                if message.lower() == 'exit':
+                    leaving_users.append(user)  # Mark this user to leave
+                    clients[user].send("You left the chatroom.\n".encode('utf-8'))
+                    break  # User leaves the chatroom
+
+                # Broadcast message to the central chatroom
+                for participant in chatroom:
+                    if participant != user:
+                        clients[participant].send(f"{user}: {message}\n".encode('utf-8'))
+
+            except Exception as e:
+                print(f"[ERROR] Error in receiving message: {e}")
+                leaving_users.append(user)  # Handle unexpected disconnections
+                break  # Break from the loop if there's an issue
+
+        # Now remove users who left
+        for user in leaving_users:
+            chatroom.discard(user)
+            if user in clients:
+                clients[user].close()  # Close the client connection
+                print(f"[DISCONNECTED] {user} left the chatroom.")
 
 def start_server():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -261,27 +299,6 @@ def start_server():
         thread = threading.Thread(target=handle_client, args=(conn, addr))
         thread.start()
         print(f"[ACTIVE CONNECTIONS] {threading.active_count() - 1}")
-           
-def invite_to_chat(conn, inviter, invitees):
-    invited_online_users = [user for user in invitees if user in clients and user != inviter]
-    
-    if invited_online_users:
-        # Initialize or add to the chat group
-        if inviter not in chat_groups:
-            chat_groups[inviter] = set()
-        
-        for user in invited_online_users:
-            if user not in chat_groups[inviter]:
-                chat_groups[inviter].add(user)
-        
-        # Notify invited users and the inviter
-        for user in invited_online_users:
-            clients[user].send(f"[INVITE] You have been invited to chat with '{inviter}'.".encode('utf-8'))
-        
-        conn.send(f"Invitations sent to: {', '.join(invited_online_users)}.\n".encode('utf-8'))
-    else:
-        conn.send("No valid online users to invite.\n".encode('utf-8'))
-    
 
 def show_logged_in_menu(conn, username):
     """Display menu options to logged-in users."""
@@ -331,6 +348,7 @@ def set_user_offline(username):
     """ Mark a user as offline """
     if username in user_status:
         user_status[username] = 'offline'
+    chatroom.discard(username)
 
 def initialize_db():
     # Get the absolute path of the directory where the script is located

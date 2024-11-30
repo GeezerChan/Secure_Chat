@@ -27,11 +27,11 @@ Secure_Chat is a secure chat application designed to enable users to communicate
 
 1. **Clone the Repository**
 
-  - Clone this repository to your local machine using:
-  ```bash git clone https://github.com/GeezerChan/Secure_Chat.git```
+  - ```bash git clone https://github.com/GeezerChan/Secure_Chat.git```
 
 2. **Install dependencies**
-  ```bash pip install -r requirements.txt```
+ 
+  - ```bash pip install -r requirements.txt```
 
 3. **Host Server**
   - Open a terminal and cd into the Secure_Chat repository.

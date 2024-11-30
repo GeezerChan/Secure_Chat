@@ -34,7 +34,9 @@ Secure_Chat is a secure chat application designed to enable users to communicate
    ```bash
    git clone https://github.com/your-username/Secure_Chat.git
 
-2. **Host Server**
+2. **Install dependenciesr**
+  pip install cryptography
+
 
 3. **Host Clients**
 

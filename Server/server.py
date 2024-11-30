@@ -1,16 +1,17 @@
 # server.py
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import padding
-from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import ciphers
+from Crypto.Cipher import PKCS1_OAEP
+from Crypto.PublicKey import RSA
+from cryptography.hazmat.backends import default_backend
 
 import socket
 import threading
 import os
 import sqlite3
 import hashlib
+import queue
+import select
 from Crypto.PublicKey import RSA
 
 # Server setup
@@ -23,6 +24,7 @@ chatroom = set()  # Set to track users in the central chatroom
 symmetric_keys = {}
 user_status = {}  # Track user status ('online' / 'offline')
 client_lock = threading.Lock()  # Thread lock for protecting shared resources
+message_queue = queue.Queue() # Shared message queue for the chatroom
 
 def store_symmetric_key_for_user(username, sym_key):
     symmetric_keys[username] = sym_key
@@ -31,36 +33,30 @@ def get_symmetric_key_for_user(username):
     return symmetric_keys.get(username)
 
 def encrypt_symmetric_key(sym_key, pub_key):
-    """ Encrypt symmetric key using the receiver's public key """
-    encrypted_key = pub_key.encrypt(
-        sym_key,
-        padding.OAEP(
-            mgf=padding.MGF1(algorithm=hashes.SHA256()),
-            algorithm=hashes.SHA256(),
-            label=None
-        )
-    )
+    """Encrypt the symmetric key using the receiver's public key."""
+    cipher = PKCS1_OAEP.new(pub_key)
+    encrypted_key = cipher.encrypt(sym_key)
     return encrypted_key
 
 def decrypt_symmetric_key(encrypted_key, priv_key):
-    """ Decrypt the symmetric key using the receiver's private key """
-    return priv_key.decrypt(
-        encrypted_key,
-        padding.OAEP(
-            mgf=padding.MGF1(algorithm=hashes.SHA256()),
-            algorithm=hashes.SHA256(),
-            label=None
-        )
-    )
+    """Decrypt the symmetric key using the receiver's private key."""
+    cipher = PKCS1_OAEP.new(priv_key)
+    decrypted_key = cipher.decrypt(encrypted_key)
+    return decrypted_key
 
 def generate_symmetric_key():
     """ Generate a random symmetric key for the chat session """
     return os.urandom(32)  # 256-bit key
 
 def get_public_key(username):
-    """ Fetch the public key of the user from a database or file """
-    # This is just a placeholder, you'll need a real implementation
-    return RSA.import_key(open(f"{username}_public.pem").read())
+    """ Fetch the public key of the user from the saved file """
+    try:
+        key_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'keys', f"{username}_public.pem")
+        with open(key_path, "rb") as key_file:
+            public_key = RSA.import_key(key_file.read())
+        return public_key
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Public key for user '{username}' not found.")
 
 def encrypt_message(message, username):
     """ Encrypt the message using the symmetric key of the user """
@@ -206,7 +202,7 @@ def handle_client(conn, addr):
 
                     # Main interaction loop for logged-in user
                     while True:
-                        conn.send("Enter 'show_online', 'invite', 'join_chatroom', or 'logout': ".encode('utf-8'))
+                        conn.send("Enter 'show_online', 'join_chatroom', or 'logout': ".encode('utf-8'))
                         user_command = conn.recv(1024).decode('utf-8')
 
                         if user_command.lower() == 'logout':
@@ -221,21 +217,25 @@ def handle_client(conn, addr):
                             else:
                                 conn.send("No users are currently online.\n".encode('utf-8'))
 
-                        elif user_command.lower() == 'invite':
-                            # Handle inviting users to chat
-                            conn.send("Enter usernames to invite (comma-separated): ".encode('utf-8'))
-                            invited_usernames = conn.recv(1024).decode('utf-8').split(',')
-
-                            for invited in invited_usernames:
-                                invited = invited.strip()
-                                if invited in clients:  # Check if the invited user is online
-                                    clients[invited].send(f"[INVITE] {username} has invited you to chat.".encode('utf-8'))
-                            conn.send("Invites sent to online users.\n".encode('utf-8'))
-
                         elif user_command.lower() == 'join_chatroom':
                             # Add the user to the central chatroom
-                            chatroom.add(username)
-                            conn.send(f"Welcome to the chatroom, {username}! Everyone is now able to chat together.\n".encode('utf-8'))
+                            with client_lock:  # Ensure thread-safety
+                                chatroom.add(username)
+
+                            # Generate a symmetric key for the chatroom if it doesn't exist
+                            if 'chatroom_key' not in globals():
+                                global chatroom_key
+                                chatroom_key = generate_symmetric_key()
+                            
+                            # Encrypt and send the symmetric key to the user
+                            user_public_key = get_public_key(username)
+                            encrypted_key = encrypt_symmetric_key(chatroom_key, user_public_key)
+                            
+                            # Log the encrypted symmetric key instead of sending it
+                            print(f"[INFO] Symmetric key for chatroom (user {username}): {encrypted_key}")
+
+                             # Send a message to the client to notify them they are joining the chatroom
+                            conn.send(f"Welcome to the chatroom, {username}! You are able to chat with users in the room.\n".encode('utf-8'))
                             start_chatroom()
 
                         else:
@@ -257,35 +257,40 @@ def handle_client(conn, addr):
         conn.close()
         print(f"[DISCONNECTED] {addr} disconnected.")
 
+def broadcast_chatroom_message(sender, message):
+    """Broadcast a message to all users in the chatroom."""
+    for participant in chatroom:
+        if participant != sender and participant in clients:
+            try:
+                print(f"[LOG] Sending message from {sender} to {participant}")
+                clients[participant].send(f"{sender}: {message}\n".encode('utf-8'))
+            except Exception as e:
+                print(f"[ERROR] Failed to send message to {participant}: {e}")
+                chatroom.discard(participant)
+
 def start_chatroom():
     """ Main chat loop for the central chatroom """
     while True:
-        leaving_users = []  # List to store users who leave during the iteration
-        for user in list(chatroom):  # Use a copy of the chatroom set for iteration
-            try:
-                message = clients[user].recv(1024).decode('utf-8')
+        # Check for messages from all users in the chatroom
+        ready_to_read, _, _ = select.select(clients.values(), [], [], 0.1)  # Small timeout to avoid busy waiting
+        for conn in ready_to_read:
+            for user, client_conn in clients.items():
+                if client_conn == conn and user in chatroom:
+                    try:
+                        message = conn.recv(1024).decode('utf-8').strip()
+                        if message.lower() == 'exit':
+                            chatroom.discard(user)
+                            conn.send("You left the chatroom.\n".encode('utf-8'))
+                        else:
+                            message_queue.put((user, message))  # Add message to the queue
+                    except Exception as e:
+                        print(f"[ERROR] Error receiving message from {user}: {e}")
+                        chatroom.discard(user)
 
-                if message.lower() == 'exit':
-                    leaving_users.append(user)  # Mark this user to leave
-                    clients[user].send("You left the chatroom.\n".encode('utf-8'))
-                    break  # User leaves the chatroom
-
-                # Broadcast message to the central chatroom
-                for participant in chatroom:
-                    if participant != user:
-                        clients[participant].send(f"{user}: {message}\n".encode('utf-8'))
-
-            except Exception as e:
-                print(f"[ERROR] Error in receiving message: {e}")
-                leaving_users.append(user)  # Handle unexpected disconnections
-                break  # Break from the loop if there's an issue
-
-        # Now remove users who left
-        for user in leaving_users:
-            chatroom.discard(user)
-            if user in clients:
-                clients[user].close()  # Close the client connection
-                print(f"[DISCONNECTED] {user} left the chatroom.")
+        # Broadcast all queued messages
+        while not message_queue.empty():
+            sender, message = message_queue.get()
+            broadcast_chatroom_message(sender, message)
 
 def start_server():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -381,14 +386,12 @@ def initialize_db():
 
 # Function to register a new user
 def register_user(username, password):
-    # Define the directory to save private keys
-    private_key_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'server')
+    private_key_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'keys')
 
     # Create the directory if it doesn't exist
     if not os.path.exists(private_key_dir):
         os.makedirs(private_key_dir)
 
-    # Database path should be consistent across all functions
     db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'users.db')
     conn = sqlite3.connect(db_path, check_same_thread=False)
     c = conn.cursor()
@@ -412,6 +415,10 @@ def register_user(username, password):
         with open(os.path.join(private_key_dir, f"{username}_private.pem"), "wb") as f:
             f.write(private_key)
 
+        # Save the public key locally for the user
+        with open(os.path.join(private_key_dir, f"{username}_public.pem"), "wb") as f:
+            f.write(public_key)
+
         return f"User '{username}' registered successfully.\n"
     except sqlite3.IntegrityError:
         print(f"[ERROR] Username '{username}' already exists.")
@@ -419,7 +426,6 @@ def register_user(username, password):
     finally:
         conn.close()
 
-    
 # Function to authenticate user login
 def authenticate_user(username, password):
     try:
@@ -468,6 +474,12 @@ def get_users_info():
     else:
         return "No registered users found.\n"
     
+def initialize_directories():
+    keys_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'keys')
+    if not os.path.exists(keys_dir):
+        os.makedirs(keys_dir)
+    
 if __name__ == "__main__":
-    initialize_db()  # Initialize the database
-    start_server()    # Start the server
+    initialize_db()          # Initialize the database
+    initialize_directories() # Initialize necessary directories
+    start_server()           # Start the server

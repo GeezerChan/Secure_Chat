@@ -27,21 +27,21 @@ Secure_Chat is a secure chat application designed to enable users to communicate
 
 1. **Clone the Repository**
 
-  - ```bash git clone https://github.com/GeezerChan/Secure_Chat.git```
+  - ```git clone https://github.com/GeezerChan/Secure_Chat.git```
 
 2. **Install dependencies**
  
-  - ```bash pip install -r requirements.txt```
+  - ```pip install -r requirements.txt```
 
 3. **Host Server**
   - Open a terminal and cd into the Secure_Chat repository.
   - Cd into Server folder and run server.py 
-    - e.g. = ```bash python3 server.py```
+    - e.g. = ```python3 server.py```
   
 4. **Host Client**
   - Open a terminal and cd into the Secure_Chat repository.
   - Cd into Client folder and run client.py 
-    - e.g. = ```bash python3 client.py```
+    - e.g. = ```python3 client.py```
 
 - Open another terminal and open another client.py
 
@@ -49,7 +49,8 @@ Secure_Chat is a secure chat application designed to enable users to communicate
   - Register a new user with a username and password.
   - Login with the user that you registered.
     - After Logging in:
-      - Can type "show_online" to show online users.
+      - Can type ```show_online``` to show online users.
       - Join central chatroom.
+        - Type ```join_chatroom``` to join Central Chatroom.
         - Start chatting with people in the chatroom. Or no one.
   

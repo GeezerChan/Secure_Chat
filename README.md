@@ -27,22 +27,21 @@ Secure_Chat is a secure chat application designed to enable users to communicate
 
 1. **Clone the Repository**
 
-  Clone this repository to your local machine using:
-  ```bash
-  git clone https://github.com/GeezerChan/Secure_Chat.git
+  - Clone this repository to your local machine using:
+  ```bash git clone https://github.com/GeezerChan/Secure_Chat.git```
 
 2. **Install dependencies**
-  pip install -r requirements.txt
+  ```bash pip install -r requirements.txt```
 
 3. **Host Server**
   - Open a terminal and cd into the Secure_Chat repository.
   - Cd into Server folder and run server.py 
-    - e.g. = "python3 server.py"
+    - e.g. = ```bash python3 server.py```
   
 4. **Host Client**
   - Open a terminal and cd into the Secure_Chat repository.
   - Cd into Client folder and run client.py 
-    - e.g. = "python3 client.py"
+    - e.g. = ```bashpython3 client.py```
 
 - Open another terminal and open another client.py
 

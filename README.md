@@ -36,12 +36,13 @@ Secure_Chat is a secure chat application designed to enable users to communicate
   - Open a terminal and cd into the Secure_Chat repository.
   - Cd into Server folder and run server.py 
     - e.g. = ```python3 server.py```
+    - e.g. = ```python server.py```
   
 4. **Host Client**
   - Open a terminal and cd into the Secure_Chat repository.
   - Cd into Client folder and run client.py 
     - e.g. = ```python3 client.py```
-
+    - e.g. = ```python client.py```
 - Open another terminal and open another client.py
 
 5. **Register and Chat**

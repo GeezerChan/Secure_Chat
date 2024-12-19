@@ -9,6 +9,7 @@ Secure_Chat is a secure chat application designed to enable users to communicate
 - Secure symmetric key distribution using public-key encryption.
 - Encrypted chat messages using symmetric keys.
 - Support for RSA and DSA digital signatures.
+- Notifications for users who are not online.
 
 ## Getting Started
 

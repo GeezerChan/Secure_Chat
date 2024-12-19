@@ -52,4 +52,8 @@ Secure_Chat is a secure chat application designed to enable users to communicate
       - Join central chatroom.
         - Type ```join_chatroom``` to join Central Chatroom.
         - Start chatting with people in the chatroom. Or no one.
+
+**Needs Working on:**
+- Users can randomly disconnect. Just reconnect(by relaunching client side for now).
+- Shows user online when they are registered.
   
